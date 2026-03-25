@@ -1,12 +1,34 @@
-import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 
-export default auth((req) => {
-  if (!req.auth) {
-    return NextResponse.redirect(new URL("/login", req.url))
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Public routes — no auth needed
+  if (
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname === "/api/health"
+  ) {
+    return NextResponse.next()
   }
-})
+
+  // Check for NextAuth session cookie (both dev and prod variants)
+  const token =
+    request.cookies.get("authjs.session-token")?.value ??
+    request.cookies.get("__Secure-authjs.session-token")?.value
+
+  if (!token) {
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set("callbackUrl", pathname)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  return NextResponse.next()
+}
 
 export const config = {
-  matcher: ["/((?!login|api/auth|_next|favicon).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon|api/auth).*)"],
 }
