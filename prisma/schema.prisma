@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Client {
+  id                   String   @id @default(cuid())
+  jmeno                String
+  prijmeni             String
+  email                String
+  telefon              String
+  typ                  String   // "kupující" | "prodávající" | "nájemce" | "pronajímatel"
+  zdroj                String   // "sreality" | "bezrealitky" | "doporuceni" | "facebook" | "web" | "cold-call"
+  datumPrvnihoKontaktu DateTime
+  status               String   // "novy" | "aktivni" | "uzavreny" | "neaktivni"
+  poznamka             String?
+  prirazenaMakler      String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  leads          Lead[]
+  purchasedSales Sale[] @relation("buyer")
+  soldSales      Sale[] @relation("seller")
+}
+
+model Property {
+  id               String   @id @default(cuid())
+  nazev            String
+  typ              String   // "byt" | "dum" | "pozemek" | "komercni"
+  lokalita         String
+  cena             Float
+  plocha           Float
+  dispozice        String
+  stav             String   // "aktivni" | "prodano" | "rezervovano" | "pripravuje_se"
+  majitel          String
+  majitelKontakt   String
+  rokRekonstrukce  Int?
+  stavebniUpravy   String?
+  energetickaTrida String?
+  fotky            Boolean  @default(false)
+  popisPopis       Boolean  @default(false)
+  koupenoZa        Float?
+  datumNasazeni    DateTime
+  poznamka         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  leads Lead[]
+  sales Sale[]
+}
+
+model Lead {
+  id               String    @id @default(cuid())
+  klientId         String
+  klient           Client    @relation(fields: [klientId], references: [id])
+  propertyId       String?
+  property         Property? @relation(fields: [propertyId], references: [id])
+  status           String    // "novy" | "kontaktovan" | "prohlidka_domluvena" | "nabidka_odeslana" | "vyjednavani" | "uzavreno" | "ztraceno"
+  datumVytvoreni   DateTime
+  datumAktualizace DateTime
+  zdroj            String
+  hodnotaObchodu   Float?
+  poznamka         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Sale {
+  id            String   @id @default(cuid())
+  propertyId    String
+  property      Property @relation(fields: [propertyId], references: [id])
+  klientId      String
+  klient        Client   @relation("buyer", fields: [klientId], references: [id])
+  prodavajiciId String
+  prodavajici   Client   @relation("seller", fields: [prodavajiciId], references: [id])
+  datumProdeje  DateTime
+  cenaFinalni   Float
+  provize       Float
+  typObchodu    String   // "prodej" | "pronajem"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id            String   @id @default(cuid())
+  nazev         String
+  typ           String   // "prohlidka" | "meeting" | "foceni" | "administrativa" | "jine"
+  zacatek       DateTime
+  konec         DateTime
+  lokace        String?
+  ucastnici     String[] // PostgreSQL text[]
+  poznamka      String?
+  propertyId    String?
+  googleEventId String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  titulek   String
+  obsah     String
+  stav      String   @default("todo") // "todo" | "in_progress" | "done"
+  priorita  String   @default("medium") // "low" | "medium" | "high"
+  tagy      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UploadedFile {
+  id        String   @id @default(cuid())
+  nazev     String
+  typ       String   // "csv" | "xlsx" | "json" | "txt" | "pdf"
+  obsah     String?
+  analyza   Json?
+  velikost  Int
+  createdAt DateTime @default(now())
+}
+
+model GoogleToken {
+  id           String    @id @default("default")
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime
+  email        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  filename   String
+  mimeType   String
+  size       Int
+  content    String   @db.Text
+  summary    String?  @db.Text
+  category   String   @default("jiny")
+  tags       String[]
+  propertyId String?
+  clientId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
