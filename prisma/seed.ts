@@ -9,6 +9,7 @@ import { PrismaClient } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
+import { hash } from "bcryptjs"
 
 // Load .env.local for DATABASE_URL
 try {
@@ -119,6 +120,97 @@ async function main() {
     skipDuplicates: true,
   })
   console.log(`  ✓ ${sales.length} sales`)
+
+  // ── Users + Tasks ──────────────────────────────────────────────────────────
+  await prisma.task.deleteMany()
+  await prisma.user.deleteMany()
+
+  const adminPassword = await hash("admin123", 12)
+  const userPassword  = await hash("heslo123", 12)
+
+  const admin = await prisma.user.create({
+    data: {
+      id: "user-admin",
+      email: "pepa@realitka.cz",
+      passwordHash: adminPassword,
+      jmeno: "Pepa",
+      prijmeni: "Novák",
+      role: "admin",
+      pozice: "Back Office Manager",
+      telefon: "+420 777 111 222",
+    },
+  })
+
+  const jana = await prisma.user.create({
+    data: {
+      id: "user-jana",
+      email: "jana@realitka.cz",
+      passwordHash: userPassword,
+      jmeno: "Jana",
+      prijmeni: "Dvořáková",
+      role: "zamestnanec",
+      pozice: "Obchodní makléřka",
+      telefon: "+420 777 333 444",
+    },
+  })
+
+  const martin = await prisma.user.create({
+    data: {
+      id: "user-martin",
+      email: "martin@realitka.cz",
+      passwordHash: userPassword,
+      jmeno: "Martin",
+      prijmeni: "Svoboda",
+      role: "zamestnanec",
+      pozice: "Obchodní makléř",
+      telefon: "+420 777 555 666",
+    },
+  })
+
+  await prisma.task.createMany({
+    data: [
+      {
+        title: "Domluvit prohlídku bytu 3+kk Holešovice",
+        description: "Kontaktovat klienta Nováka a domluvit termín prohlídky bytu na Ortenově náměstí.",
+        status: "novy",
+        priority: "high",
+        type: "prohlidka",
+        assignedToId: jana.id,
+        createdById: admin.id,
+        dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+      },
+      {
+        title: "Najít nemovitost v Holešovicích do 6M",
+        description: "Prohledat Sreality a Bezrealitky, najít vhodné byty 2+kk nebo 3+kk v Holešovicích do 6 milionů Kč.",
+        status: "rozpracovany",
+        priority: "normal",
+        type: "hledani",
+        assignedToId: martin.id,
+        createdById: admin.id,
+        dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+      },
+      {
+        title: "Zjistit nové potenciální zákazníky",
+        description: "Projít nové leady z webu a Facebooku, kontaktovat je a zjistit jejich požadavky.",
+        status: "novy",
+        priority: "normal",
+        type: "kontakt",
+        assignedToId: jana.id,
+        createdById: admin.id,
+      },
+      {
+        title: "Pronajmout byt na Praze 3",
+        description: "Připravit inzerát a najít nájemce pro byt 2+1 na Vinohradech. Cílová cena pronájmu 22 000 Kč/měsíc.",
+        status: "novy",
+        priority: "high",
+        type: "pronajem",
+        assignedToId: martin.id,
+        createdById: admin.id,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  })
+  console.log(`  ✓ 3 users + 4 tasks seeded`)
 
   console.log("\n✅ Seed complete! (Calendar events skipped — synced from Google Calendar)")
 }

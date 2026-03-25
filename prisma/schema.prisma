@@ -6,6 +6,44 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  jmeno        String
+  prijmeni     String
+  role         String   @default("zamestnanec")
+  avatar       String?
+  telefon      String?
+  pozice       String?
+  aktivni      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedTasks Task[]
+  createdTasks  Task[]  @relation("taskCreator")
+}
+
+model Task {
+  id           String    @id @default(cuid())
+  title        String
+  description  String    @db.Text
+  status       String    @default("novy")
+  priority     String    @default("normal")
+  type         String    @default("obecny")
+  assignedToId String
+  assignedTo   User      @relation(fields: [assignedToId], references: [id])
+  createdById  String
+  createdBy    User      @relation("taskCreator", fields: [createdById], references: [id])
+  propertyId   String?
+  clientId     String?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
 model Client {
   id                   String   @id @default(cuid())
   jmeno                String

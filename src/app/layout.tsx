@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import "./globals.css"
-import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/toaster"
+import { SessionProviderWrapper } from "@/components/layout/session-provider"
+import { AppShell } from "@/components/layout/app-shell"
 
 export const metadata: Metadata = {
   title: "Pepa 2.0 | AI Back Office Agent",
@@ -24,15 +25,12 @@ export default function RootLayout({
   return (
     <html lang="cs" className="h-full antialiased">
       <body className="h-full bg-slate-50">
-        <Sidebar />
-        {/* Desktop: pl-64 offset for sidebar; mobile: pt-14 for top bar */}
-        <main className="pl-0 md:pl-64 min-h-screen">
-          <div className="h-14 md:h-0" />
-          <div className="mx-auto max-w-screen-xl px-4 md:px-6 py-4 md:py-6 page-fade-in">
+        <SessionProviderWrapper>
+          <AppShell>
             {children}
-          </div>
-        </main>
-        <Toaster />
+          </AppShell>
+          <Toaster />
+        </SessionProviderWrapper>
       </body>
     </html>
   )

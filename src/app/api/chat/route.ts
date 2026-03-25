@@ -3,6 +3,7 @@ import { anthropic } from "@ai-sdk/anthropic"
 import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { monitoringResults } from "@/lib/data/monitoring"
+import { auth } from "@/lib/auth"
 
 export const maxDuration = 60
 
@@ -85,7 +86,14 @@ Když odpovídáš:
 - Buď konkrétní a přesný, cituj přesná čísla z dat
 - Když ti uživatel řekne "znázorni graficky", "vytvoř graf" nebo "vizualizuj", použij tool generateChart
 - Když nemáš dost informací, zeptej se
-- Po zavolání nástroje vždy shrň výsledky v přátelském textu`
+- Po zavolání nástroje vždy shrň výsledky v přátelském textu
+
+Umíš přiřazovat úkoly zaměstnancům týmu. Členové týmu: Jana Dvořáková (obchodní makléřka), Martin Svoboda (obchodní makléř). Příklady:
+- "Přiřaď Janě prohlídku bytu v Holešovicích na čtvrtek" → assignTask + createCalendarEvent
+- "Co dělá Martin? Jaké má úkoly?" → getTeamTasks
+- "Dej Martinovi za úkol najít byt v Holešovicích do 6M" → assignTask
+- "Jaké úkoly jsou nesplněné?" → getTeamTasks se status="novy"
+Když přiřazuješ úkol, vždy potvrď komu a co jsi přiřadil.`
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json()
@@ -1980,6 +1988,93 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
               createdAt: sale.createdAt.toISOString(),
               updatedAt: sale.updatedAt.toISOString(),
             },
+          }
+        },
+      },
+
+      // ── Team tools ─────────────────────────────────────────────────────────
+
+      assignTask: {
+        description: "Přiřadí úkol zaměstnanci. Použij když uživatel (šéf) chce přiřadit úkol někomu z týmu, delegovat práci, nebo vytvořit pracovní zadání.",
+        inputSchema: z.object({
+          komu:       z.string().describe("Jméno zaměstnance, např. 'Jana', 'Martin', 'Jana Dvořáková'"),
+          nazev:      z.string().describe("Název úkolu"),
+          popis:      z.string().describe("Detailní popis co má zaměstnanec udělat"),
+          typ:        z.enum(["obecny","prohlidka","hledani","kontakt","pronajem","prodej","administrativa"]),
+          priorita:   z.enum(["low","normal","high","urgent"]).optional().default("normal"),
+          termin:     z.string().optional().describe("ISO datum termínu splnění"),
+          propertyId: z.string().optional(),
+          clientId:   z.string().optional(),
+        }),
+        execute: async ({ komu, nazev, popis, typ, priorita, termin, propertyId, clientId }) => {
+          const assignedTo = await prisma.user.findFirst({
+            where: { jmeno: { contains: komu, mode: "insensitive" }, aktivni: true },
+          }) ?? await prisma.user.findFirst({
+            where: { OR: [{ jmeno: { contains: komu.split(" ")[0], mode: "insensitive" } }, { prijmeni: { contains: komu.split(" ").pop(), mode: "insensitive" } }], aktivni: true },
+          })
+
+          if (!assignedTo) return { error: `Zaměstnanec "${komu}" nenalezen` }
+
+          const session = await auth()
+          const createdById = (session?.user as Record<string, unknown> | undefined)?.id as string | undefined
+            ?? (await prisma.user.findFirst({ where: { role: "admin" } }))?.id
+            ?? assignedTo.id
+
+          const task = await prisma.task.create({
+            data: {
+              title: nazev, description: popis, type: typ,
+              priority: priorita ?? "normal",
+              assignedToId: assignedTo.id, createdById,
+              dueDate: termin ? new Date(termin) : null,
+              propertyId: propertyId ?? null,
+              clientId: clientId ?? null,
+            },
+          })
+
+          return {
+            success: true,
+            task: { ...task, dueDate: task.dueDate?.toISOString() ?? null, createdAt: task.createdAt.toISOString() },
+            assignedTo: `${assignedTo.jmeno} ${assignedTo.prijmeni}`,
+          }
+        },
+      },
+
+      getTeamTasks: {
+        description: "Zobrazí úkoly týmu nebo konkrétního zaměstnance. Použij když šéf chce vědět na čem kdo pracuje, jaké jsou otevřené úkoly, nebo co je potřeba udělat.",
+        inputSchema: z.object({
+          zamestnanec: z.string().optional().describe("Jméno pro filtraci, volitelné"),
+          status:      z.enum(["novy","rozpracovany","hotovo","vse"]).optional(),
+          priorita:    z.enum(["low","normal","high","urgent"]).optional(),
+        }),
+        execute: async ({ zamestnanec, status, priorita }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const where: Record<string, any> = {}
+          if (zamestnanec) {
+            const user = await prisma.user.findFirst({
+              where: { jmeno: { contains: zamestnanec, mode: "insensitive" } },
+            })
+            if (user) where.assignedToId = user.id
+          }
+          if (status && status !== "vse") where.status = status
+          if (priorita) where.priority = priorita
+
+          const tasks = await prisma.task.findMany({
+            where,
+            include: {
+              assignedTo: { select: { id: true, jmeno: true, prijmeni: true, pozice: true } },
+              createdBy:  { select: { id: true, jmeno: true, prijmeni: true } },
+            },
+            orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+            take: 30,
+          })
+
+          const allTasks = await prisma.task.findMany({ select: { status: true } })
+          const stats = { celkem: allTasks.length, novy: 0, rozpracovany: 0, hotovo: 0 }
+          for (const t of allTasks) { if (t.status in stats) (stats as Record<string, number>)[t.status]++ }
+
+          return {
+            tasks: tasks.map(t => ({ ...t, dueDate: t.dueDate?.toISOString() ?? null, createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(), completedAt: t.completedAt?.toISOString() ?? null })),
+            stats,
           }
         },
       },

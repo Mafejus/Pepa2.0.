@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2/src/lib/data\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2/src/app/api/clients\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2/src/app/api/properties\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2/src/app/api/leads\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2/src/app/api/sales\")",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const ai = require\\(''C:/Users/matej/Documents/development/Back Office Operations Agent/pepa-2/node_modules/ai''\\); console.log\\(Object.keys\\(ai\\).filter\\(k => [''streamText'',''tool'',''generateText''].includes\\(k\\)\\)\\)\")",
+      "Bash(node -e \"const ai = require\\(''C:/Users/matej/Documents/development/Back Office Operations Agent/pepa-2/node_modules/@ai-sdk/anthropic''\\); console.log\\(Object.keys\\(ai\\)\\)\")",
+      "Bash(node:*)",
+      "Bash(ls \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2\\\\node_modules\\\\ai\\\\dist\\\\internal 2>/dev/null | head -10 && cat C:UsersmatejDocumentsdevelopmentBack\" Office Operations \"Agentpepa-2node_modulesaisrcuiuse-chat.ts 2>/dev/null | head -40 || find C:UsersmatejDocumentsdevelopmentBack\" Office Operations Agentpepa-2node_modulesaisrc -name use-chat*)",
+      "Bash(find 'C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2\\\\node_modules\\\\ai\\\\src' -name *.ts -not -path */node_modules/*)",
+      "Bash(find 'C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2\\\\node_modules\\\\ai\\\\src' -name *.ts)",
+      "Bash(xargs grep:*)",
+      "Bash(find 'C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2\\\\node_modules\\\\ai' -name *.md)",
+      "Skill(claude-api)",
+      "Bash(ls \"C:\\\\Users\\\\matej\\\\Documents\\\\development\\\\Back Office Operations Agent\\\\pepa-2\\\\node_modules\\\\@ai-sdk\"\" && echo \"---\" && cat \"C:UsersmatejDocumentsdevelopmentBack Office Operations Agentpepa-2node_modulesaidocs04-ai-sdk-ui02-chatbot.mdx\" | grep -A5 \"import.*useChat)",
+      "Bash(from '@ai-sdk \")",
+      "Bash(npm install:*)",
+      "Bash(grep -r \"initialMessages\\\\|UseChatOptions\" '/c/Users/matej/Documents/development/Back Office Operations Agent/pepa-2/node_modules/@ai-sdk/react/dist' --include=*.d.ts -l)",
+      "Bash(npx prisma:*)",
+      "Bash(npx next:*)",
+      "Bash(find 'C:/Users/matej/Documents/development/Back Office Operations Agent/pepa-2/node_modules' -name query_engine*)",
+      "Bash(find 'C:/Users/matej/Documents/development/Back Office Operations Agent/pepa-2/node_modules' -name *.node)",
+      "Bash(ls:*)",
+      "Bash(npm run:*)",
+      "WebFetch(domain:reality.bazos.cz)",
+      "WebFetch(domain:www.realitymix.cz)"
+    ]
+  }
+}
