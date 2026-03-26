@@ -107,7 +107,7 @@ ODPOVĚZ POUZE JSON ARRAYEM, žádný další text.`
 
     try {
       const { text } = await generateText({
-        model: anthropic("claude-sonnet-4-6"),
+        model: anthropic("claude-sonnet-4-20250514"),
         system:
           "Jsi expert na český realitní trh. Analyzuj nabídky nemovitostí a ohodnoť jejich zajímavost pro realitní kancelář. Odpovídej POUZE validním JSON arrayem.",
         prompt,

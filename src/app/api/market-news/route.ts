@@ -28,10 +28,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-6"),
-      system: "Jsi novinář specializující se na český realitní trh. Na základě svých znalostí vytvoř přehled aktuálního dění. Odpovídej POUZE validním JSON arrayem.",
-      prompt: `Vytvoř přehled 6-8 nejdůležitějších zpráv a trendů z realitního trhu v ${lokalita}${tema ? ` se zaměřením na ${tema}` : ""}. Zaměř se na: vývoj cen nemovitostí, hypoteční sazby, nové projekty, legislativu, trendy v bydlení.
+    let news: NewsItem[]
+    try {
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: "Jsi novinář specializující se na český realitní trh. Na základě svých znalostí vytvoř přehled aktuálního dění. Odpovídej POUZE validním JSON arrayem.",
+        prompt: `Vytvoř přehled 6-8 nejdůležitějších zpráv a trendů z realitního trhu v ${lokalita}${tema ? ` se zaměřením na ${tema}` : ""}. Zaměř se na: vývoj cen nemovitostí, hypoteční sazby, nové projekty, legislativu, trendy v bydlení.
 
 Aktuální datum: ${new Date().toLocaleDateString("cs-CZ")}
 
@@ -46,15 +48,24 @@ Vrať JSON array:
 }]
 
 ODPOVĚZ POUZE JSON ARRAYEM.`,
-      maxOutputTokens: 2000,
-    })
+        maxOutputTokens: 2000,
+      })
 
-    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-    const news: NewsItem[] = JSON.parse(cleaned)
+      const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
+      news = JSON.parse(cleaned) as NewsItem[]
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error("[market-news] Claude API error:", msg)
+      return NextResponse.json(
+        { news: [], error: "AI analýza dočasně nedostupná. Zkuste to za chvíli.", detail: msg },
+        { status: 503 }
+      )
+    }
 
     cache.set(cacheKey, { data: news, ts: Date.now() })
     return NextResponse.json({ news, lokalita })
   } catch (err) {
-    return NextResponse.json({ news: [], error: String(err) }, { status: 500 })
+    console.error("[market-news] error:", err)
+    return NextResponse.json({ news: [], error: "Chyba serveru. Zkuste to za chvíli." }, { status: 500 })
   }
 }

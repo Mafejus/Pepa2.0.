@@ -144,7 +144,10 @@ export default function PoradcePage() {
       if (nocache) params.set("nocache", "1")
       const res = await fetch(`/api/ai-advisor/buy?${params}`)
       const data = await res.json()
-      if (data.error && !data.recommendations?.length) throw new Error(data.error)
+      if (!res.ok || (data.error && !data.recommendations?.length)) {
+        setBuyError("AI analýza dočasně nedostupná — zkuste to za chvíli.")
+        return
+      }
       const recs = data.recommendations ?? []
       const celkem = data.celkemNabidek ?? null
       setBuyData(recs)
@@ -152,7 +155,7 @@ export default function PoradcePage() {
       lsSet("poradce_buy_data", recs)
       lsSet("poradce_buy_celkem", celkem)
       lsSet("poradce_buy_city", buyCity)
-    } catch (e) { setBuyError(String(e)) }
+    } catch { setBuyError("AI analýza dočasně nedostupná — zkuste to za chvíli.") }
     finally { setBuyLoading(false) }
   }
 
@@ -161,11 +164,14 @@ export default function PoradcePage() {
     try {
       const res = await fetch("/api/ai-advisor/sell")
       const data = await res.json()
-      if (data.error && !data.recommendations?.length) throw new Error(data.error)
+      if (!res.ok || (data.error && !data.recommendations?.length)) {
+        setSellError("AI analýza dočasně nedostupná — zkuste to za chvíli.")
+        return
+      }
       const recs = data.recommendations ?? []
       setSellData(recs)
       lsSet("poradce_sell_data", recs)
-    } catch (e) { setSellError(String(e)) }
+    } catch { setSellError("AI analýza dočasně nedostupná — zkuste to za chvíli.") }
     finally { setSellLoading(false) }
   }
 
@@ -176,14 +182,17 @@ export default function PoradcePage() {
       if (nocache) params.set("nocache", "1")
       const res = await fetch(`/api/market-analysis?${params}`)
       const data = await res.json()
-      if (data.error && !data.analysis) throw new Error(data.error)
+      if (!res.ok || (data.error && !data.analysis)) {
+        setMarketError("AI analýza dočasně nedostupná — zkuste to za chvíli.")
+        return
+      }
       const basis = data.dataBasis ?? null
       setMarketData(data.analysis)
       setMarketBasis(basis)
       lsSet("poradce_market_data", data.analysis)
       lsSet("poradce_market_basis", basis)
       lsSet("poradce_market_city", marketCity)
-    } catch (e) { setMarketError(String(e)) }
+    } catch { setMarketError("AI analýza dočasně nedostupná — zkuste to za chvíli.") }
     finally { setMarketLoading(false) }
   }
 
@@ -192,12 +201,15 @@ export default function PoradcePage() {
     try {
       const res = await fetch(`/api/market-news?lokalita=${encodeURIComponent(newsCity)}`)
       const data = await res.json()
-      if (data.error && !data.news?.length) throw new Error(data.error)
+      if (!res.ok || (data.error && !data.news?.length)) {
+        setNewsError("AI analýza dočasně nedostupná — zkuste to za chvíli.")
+        return
+      }
       const news = data.news ?? []
       setNewsData(news)
       lsSet("poradce_news_data", news)
       lsSet("poradce_news_city", newsCity)
-    } catch (e) { setNewsError(String(e)) }
+    } catch { setNewsError("AI analýza dočasně nedostupná — zkuste to za chvíli.") }
     finally { setNewsLoading(false) }
   }
 
@@ -263,9 +275,17 @@ export default function PoradcePage() {
             )}
 
             {buyError && (
-              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {buyError}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {buyError}
+                </div>
+                <button
+                  onClick={() => loadBuy(true)}
+                  className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  Zkusit znovu
+                </button>
               </div>
             )}
 
@@ -322,9 +342,17 @@ export default function PoradcePage() {
             </div>
 
             {sellError && (
-              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                Analýza dočasně nedostupná — {sellError}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {sellError}
+                </div>
+                <button
+                  onClick={loadSell}
+                  className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  Zkusit znovu
+                </button>
               </div>
             )}
 
@@ -408,9 +436,17 @@ export default function PoradcePage() {
             )}
 
             {marketError && (
-              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {marketError}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {marketError}
+                </div>
+                <button
+                  onClick={() => loadMarket(true)}
+                  className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  Zkusit znovu
+                </button>
               </div>
             )}
 
@@ -513,9 +549,17 @@ export default function PoradcePage() {
             </div>
 
             {newsError && (
-              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                Zprávy dočasně nedostupné
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {newsError}
+                </div>
+                <button
+                  onClick={loadNews}
+                  className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  Zkusit znovu
+                </button>
               </div>
             )}
 

@@ -36,10 +36,12 @@ export async function GET() {
       return NextResponse.json({ recommendations: [] })
     }
 
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-6"),
-      system: "Jsi expert na český realitní trh. Odpovídej POUZE validním JSON arrayem.",
-      prompt: `Analyzuj portfolio těchto nemovitostí a doporuč prodejní strategii. Porovnej ceny s aktuálním trhem v Praze.
+    let recommendations: SellRecommendation[]
+    try {
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: "Jsi expert na český realitní trh. Odpovídej POUZE validním JSON arrayem.",
+        prompt: `Analyzuj portfolio těchto nemovitostí a doporuč prodejní strategii. Porovnej ceny s aktuálním trhem v Praze.
 
 Portfolio:
 ${JSON.stringify(properties, null, 2)}
@@ -52,15 +54,24 @@ Pro každou nemovitost doporuč:
 Odpověz v JSON: [{ "propertyId": string, "nazev": string, "aktualniCena": number, "odhadTrzniCena": number, "doporuceni": "prodat"|"drzet"|"snizit_cenu", "duvod": "vysvětlení 2-3 věty", "urgence": "vysoká"|"střední"|"nízká" }]
 
 ODPOVĚZ POUZE JSON ARRAYEM.`,
-      maxOutputTokens: 2000,
-    })
+        maxOutputTokens: 2000,
+      })
 
-    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-    const recommendations: SellRecommendation[] = JSON.parse(cleaned)
+      const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
+      recommendations = JSON.parse(cleaned) as SellRecommendation[]
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error("[ai-advisor/sell] Claude API error:", msg)
+      return NextResponse.json(
+        { recommendations: [], error: "AI analýza dočasně nedostupná. Zkuste to za chvíli.", detail: msg },
+        { status: 503 }
+      )
+    }
 
     cache.set("sell", { data: recommendations, ts: Date.now() })
     return NextResponse.json({ recommendations })
   } catch (err) {
-    return NextResponse.json({ recommendations: [], error: String(err) }, { status: 500 })
+    console.error("[ai-advisor/sell] error:", err)
+    return NextResponse.json({ recommendations: [], error: "Chyba serveru. Zkuste to za chvíli." }, { status: 500 })
   }
 }

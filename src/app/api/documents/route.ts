@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     let summary: string | null = null
     try {
       const { text } = await generateText({
-        model: anthropic("claude-sonnet-4-6"),
+        model: anthropic("claude-sonnet-4-20250514"),
         system: "Jsi asistent realitní kanceláře. Shrň obsah dokumentu stručně v 2-3 větách česky. Vyzdvihni nejdůležitější informace (ceny, strany smlouvy, termíny, nemovitosti). Odpověz POUZE shrnutím, bez uvozovek.",
         prompt: `Dokument: ${filename}\n\nObsah:\n${content.slice(0, 3000)}`,
         maxOutputTokens: 300,

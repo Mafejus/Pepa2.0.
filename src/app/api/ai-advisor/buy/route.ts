@@ -55,10 +55,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ recommendations: [], error: "Žádné aktuální nabídky v databázi. Zkuste spustit monitoring nejprve." })
     }
 
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-6"),
-      system: "Jsi expert na český realitní trh a investice do nemovitostí. Odpovídej POUZE validním JSON arrayem bez dalšího textu. NEPIŠ nic jiného než JSON.",
-      prompt: `Analyzuj tyto nabídky z ${lokalita} a vyber TOP 3 nejzajímavější k nákupu.
+    let parsed: BuyRecommendation[]
+    try {
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: "Jsi expert na český realitní trh a investice do nemovitostí. Odpovídej POUZE validním JSON arrayem bez dalšího textu. NEPIŠ nic jiného než JSON.",
+        prompt: `Analyzuj tyto nabídky z ${lokalita} a vyber TOP 3 nejzajímavější k nákupu.
 
 Nabídky (${results.length}):
 ${JSON.stringify(results.slice(0, 12).map((r) => ({
@@ -74,22 +76,28 @@ ${JSON.stringify(results.slice(0, 12).map((r) => ({
 
 Odpověz POUZE tímto JSON (max 3 položky, krátké texty):
 [{"id":"...","nazev":"...","cena":0,"lokalita":"...","url":"...","plocha":0,"dispozice":"...","duvod":"1-2 věty","investicniPotencial":"vysoky","doporuceniAkce":"1 věta"}]`,
-      maxOutputTokens: 4000,
-    })
+        maxOutputTokens: 4000,
+      })
 
-    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-    let parsed: BuyRecommendation[]
-    try {
-      parsed = JSON.parse(cleaned) as BuyRecommendation[]
-    } catch {
-      // Try to recover truncated JSON by finding the last complete object
-      const lastClose = cleaned.lastIndexOf("},")
-      const recovered = lastClose > 0 ? cleaned.slice(0, lastClose + 1) + "]" : "[]"
+      const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
       try {
-        parsed = JSON.parse(recovered) as BuyRecommendation[]
+        parsed = JSON.parse(cleaned) as BuyRecommendation[]
       } catch {
-        parsed = []
+        const lastClose = cleaned.lastIndexOf("},")
+        const recovered = lastClose > 0 ? cleaned.slice(0, lastClose + 1) + "]" : "[]"
+        try {
+          parsed = JSON.parse(recovered) as BuyRecommendation[]
+        } catch {
+          parsed = []
+        }
       }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error("[ai-advisor/buy] Claude API error:", msg)
+      return NextResponse.json(
+        { recommendations: [], error: "AI analýza dočasně nedostupná. Zkuste to za chvíli.", detail: msg },
+        { status: 503 }
+      )
     }
 
     // Merge back URLs from original results if Claude dropped them

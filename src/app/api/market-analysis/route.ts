@@ -79,10 +79,12 @@ export async function GET(req: NextRequest) {
       : 0
     const slevyCount = results.filter((r) => (r as MonitoringResult & { jeSleva?: boolean }).jeSleva).length
 
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-6"),
-      system: "Jsi analytik realitního trhu v ČR. Pracuješ s reálnými daty z realitních serverů. Odpovídej POUZE validním JSON objektem.",
-      prompt: `Proveď analýzu realitního trhu pro lokalitu "${lokalita}" na základě REÁLNÝCH aktuálních dat z realitních serverů.
+    let analysis: MarketAnalysis
+    try {
+      const { text } = await generateText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: "Jsi analytik realitního trhu v ČR. Pracuješ s reálnými daty z realitních serverů. Odpovídej POUZE validním JSON objektem.",
+        prompt: `Proveď analýzu realitního trhu pro lokalitu "${lokalita}" na základě REÁLNÝCH aktuálních dat z realitních serverů.
 
 Statistiky dat:
 - Počet nabídek: ${results.length}
@@ -117,15 +119,24 @@ Analyzuj tato REÁLNÁ data a vrať JSON:
 }
 
 ODPOVĚZ POUZE JSON OBJEKTEM.`,
-      maxOutputTokens: 1500,
-    })
+        maxOutputTokens: 1500,
+      })
 
-    const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-    const analysis: MarketAnalysis = { ...JSON.parse(cleaned), dataBasis: results.length }
+      const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
+      analysis = { ...JSON.parse(cleaned), dataBasis: results.length } as MarketAnalysis
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error("[market-analysis] Claude API error:", msg)
+      return NextResponse.json(
+        { analysis: null, error: "AI analýza dočasně nedostupná. Zkuste to za chvíli.", detail: msg, lokalita },
+        { status: 503 }
+      )
+    }
 
     cache.set(cacheKey, { data: analysis, ts: Date.now() })
     return NextResponse.json({ analysis, lokalita, dataBasis: results.length })
   } catch (err) {
-    return NextResponse.json({ analysis: null, error: String(err), lokalita }, { status: 500 })
+    console.error("[market-analysis] error:", err)
+    return NextResponse.json({ analysis: null, error: "Chyba serveru. Zkuste to za chvíli.", lokalita }, { status: 500 })
   }
 }

@@ -108,7 +108,7 @@ export async function POST(req: Request) {
   const systemWithDate = `Dnešní datum je: ${formattedDate}. Aktuální rok je ${today.getFullYear()}. Když mluvíš o "tomto týdnu", "minulém měsíci" atd., vždy počítej od tohoto data.\n\n${SYSTEM_PROMPT}`
 
   const result = streamText({
-    model: anthropic("claude-sonnet-4-6"),
+    model: anthropic("claude-sonnet-4-20250514"),
     system: systemWithDate,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(10),
