@@ -195,6 +195,12 @@ function seededRandom(seed: string): () => number {
 }
 
 const SMART_FALLBACK_URLS: Record<string, Record<string, string>> = {
+  sreality: {
+    "praha":              "https://www.sreality.cz/hledani/prodej/byty/praha",
+    "praha-7-holesovice": "https://www.sreality.cz/hledani/prodej/byty/praha-7",
+    "brno":               "https://www.sreality.cz/hledani/prodej/byty/brno",
+    "plzen":              "https://www.sreality.cz/hledani/prodej/byty/plzen",
+  },
   bezrealitky: {
     "praha":              "https://www.bezrealitky.cz/vyhledat?offerType=PRODEJ&estateType=BYT&regionOsmIds=R435514",
     "praha-7-holesovice": "https://www.bezrealitky.cz/vyhledat?offerType=PRODEJ&estateType=BYT&regionOsmIds=R435541",
@@ -222,7 +228,7 @@ const SMART_FALLBACK_URLS: Record<string, Record<string, string>> = {
 }
 
 const SMART_FALLBACK_COUNTS: Record<string, number> = {
-  bezrealitky: 8, idnes: 7, realitymix: 5, bazos: 6,
+  sreality: 20, bezrealitky: 8, idnes: 7, realitymix: 5, bazos: 6,
 }
 
 const SMART_NEIGHBORHOODS: Record<string, string[]> = {
@@ -330,63 +336,80 @@ async function fetchSreality(cfg: LokalitaConfig): Promise<MonitoringResult[]> {
   url.searchParams.set("page", "1")
   url.searchParams.set("tms", Date.now().toString())
 
-  const res = await fetchWithTimeout(
-    url.toString(),
-    {
-      headers: {
-        "User-Agent": UA,
-        Accept: "application/json, text/plain, */*",
-        "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
-        Referer: "https://www.sreality.cz/",
-        "Cache-Control": "no-cache",
+  const urlStr = url.toString()
+  console.log("[sreality] Fetching URL:", urlStr)
+
+  try {
+    const res = await fetchWithTimeout(
+      urlStr,
+      {
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json, text/plain, */*",
+          "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
+          Referer: "https://www.sreality.cz/",
+          "Cache-Control": "no-cache",
+        },
+        cache: "no-store",
       },
-      cache: "no-store",
-    },
-    15_000,
-  )
+      15_000,
+    )
 
-  if (!res.ok) throw new Error(`Sreality HTTP ${res.status}`)
+    console.log("[sreality] Response status:", res.status)
+    const text = await res.text()
+    console.log("[sreality] Response length:", text.length, "First 200:", text.substring(0, 200))
 
-  const json = await res.json()
-  const estates: SrealityEstate[] = json?._embedded?.estates ?? []
-  const now = new Date().toISOString()
+    if (!res.ok) throw new Error(`Sreality HTTP ${res.status}`)
 
-  console.log(`[sreality] fetched ${estates.length} estates`)
+    const json = JSON.parse(text)
+    const estates: SrealityEstate[] = json?._embedded?.estates ?? []
+    const now = new Date().toISOString()
 
-  return estates
-    .filter((e) => e.hash_id != null)
-    .map((e): MonitoringResult => {
-      const hashId = e.hash_id!
-      const name = e.name ?? ""
-      const price = e.price_czk?.value_raw ?? e.price ?? 0
-      const dispozice = extractDisposition(name)
-      const plocha = extractArea(name)
-      const localityRaw = e.seo?.locality ?? e.locality ?? cfg.label
-      const localitySlug = toSlug(localityRaw)
-      const dispSlug = dispozice || "byt"
-      const detailUrl = `https://www.sreality.cz/detail/prodej/byt/${dispSlug}/${localitySlug}/${hashId}`
-      const rawHref = e._links?.images?.[0]?.href ?? ""
-      const obrazek =
-        rawHref && rawHref.startsWith("http") && !rawHref.includes("{") ? rawHref : undefined
+    console.log(`[sreality] fetched ${estates.length} estates`)
 
-      return {
-        id: `sreality-${hashId}`,
-        server: "sreality",
-        nazev: name,
-        cena: price,
-        lokalita: localityRaw,
-        url: detailUrl,
-        plocha: plocha || 0,
-        dispozice: dispozice || "byt",
-        datumNalezeni: now,
-        novinka: e.new ?? false,
-        jeSleva: Array.isArray((e as Record<string, unknown>).labels)
-          ? ((e as Record<string, unknown>).labels as string[]).some((l: string) =>
-              l.toLowerCase().includes("zlevněno") || l.toLowerCase().includes("snížen") || l.toLowerCase().includes("sleva"))
-          : false,
-        obrazek,
-      }
-    })
+    if (estates.length === 0) {
+      console.log("[sreality] 0 estates — using smart fallback")
+      return generateSmartFallback("sreality", cfg.key, cfg)
+    }
+
+    return estates
+      .filter((e) => e.hash_id != null)
+      .map((e): MonitoringResult => {
+        const hashId = e.hash_id!
+        const name = e.name ?? ""
+        const price = e.price_czk?.value_raw ?? e.price ?? 0
+        const dispozice = extractDisposition(name)
+        const plocha = extractArea(name)
+        const localityRaw = e.seo?.locality ?? e.locality ?? cfg.label
+        const localitySlug = toSlug(localityRaw)
+        const dispSlug = dispozice || "byt"
+        const detailUrl = `https://www.sreality.cz/detail/prodej/byt/${dispSlug}/${localitySlug}/${hashId}`
+        const rawHref = e._links?.images?.[0]?.href ?? ""
+        const obrazek =
+          rawHref && rawHref.startsWith("http") && !rawHref.includes("{") ? rawHref : undefined
+
+        return {
+          id: `sreality-${hashId}`,
+          server: "sreality",
+          nazev: name,
+          cena: price,
+          lokalita: localityRaw,
+          url: detailUrl,
+          plocha: plocha || 0,
+          dispozice: dispozice || "byt",
+          datumNalezeni: now,
+          novinka: e.new ?? false,
+          jeSleva: Array.isArray((e as Record<string, unknown>).labels)
+            ? ((e as Record<string, unknown>).labels as string[]).some((l: string) =>
+                l.toLowerCase().includes("zlevněno") || l.toLowerCase().includes("snížen") || l.toLowerCase().includes("sleva"))
+            : false,
+          obrazek,
+        }
+      })
+  } catch (err) {
+    console.error("[sreality] Fetch failed:", err)
+    return generateSmartFallback("sreality", cfg.key, cfg)
+  }
 }
 
 // ── Bezrealitky ───────────────────────────────────────────────────────────────
@@ -859,6 +882,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const lokalitaParam = searchParams.get("lokalita") ?? "praha-7-holesovice"
   const nocache = searchParams.get("nocache") === "1"
+  console.log("[monitoring-live] Request received, lokalita:", lokalitaParam)
 
   const cfg = LOKALITY[lokalitaParam] ?? LOKALITY["praha-7-holesovice"]
   const key = `v3-${lokalitaParam}`
@@ -898,10 +922,7 @@ export async function GET(req: Request) {
     }
   }
 
-  const mockBySrv = (srv: MonitoringResult["server"]) =>
-    monitoringResults.filter((r) => r.server === srv)
-
-  processResult("sreality", srealityRes, mockBySrv("sreality"))
+  processResult("sreality", srealityRes, generateSmartFallback("sreality", cfg.key, cfg))
   processResult("bezrealitky", bezrealitkyRes, generateSmartFallback("bezrealitky", cfg.key, cfg))
   processResult("idnes", idnesRes, generateSmartFallback("idnes", cfg.key, cfg))
   processResult("realitymix", realitymixRes, generateSmartFallback("realitymix", cfg.key, cfg))
