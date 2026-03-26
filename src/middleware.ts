@@ -4,14 +4,18 @@ import type { NextRequest } from "next/server"
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Public routes — no auth needed
+  // API routes and static assets — skip middleware entirely
+  // (API routes handle their own auth; internal server-to-server fetches must not be blocked)
   if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    pathname === "/api/health"
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/favicon")
   ) {
+    return NextResponse.next()
+  }
+
+  // Public page routes
+  if (pathname.startsWith("/login")) {
     return NextResponse.next()
   }
 
@@ -30,5 +34,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon|api/auth).*)"],
+  // Only run on page routes — not on API, static assets, or images
+  matcher: ["/((?!api|_next/static|_next/image|favicon).*)"],
 }
