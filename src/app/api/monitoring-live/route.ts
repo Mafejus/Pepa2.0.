@@ -188,8 +188,9 @@ function seededRandom(seed: string): () => number {
   for (let i = 0; i < seed.length; i++) {
     h = ((h << 5) - h + seed.charCodeAt(i)) | 0
   }
+  h = Math.abs(h) || 1  // ensure positive and non-zero (h=0 → infinite loop producing negative values)
   return () => {
-    h = (h * 16807) % 2147483647
+    h = Math.abs((h * 16807) % 2147483647) || 1
     return (h - 1) / 2147483646
   }
 }
@@ -283,12 +284,14 @@ function generateSmartFallback(
   const now      = new Date()
 
   return Array.from({ length: count }, (_, i) => {
-    const d    = SMART_DISPS[Math.floor(rand() * SMART_DISPS.length)]
+    const dIdx = Math.floor(rand() * SMART_DISPS.length) % SMART_DISPS.length
+    const d    = SMART_DISPS[dIdx] ?? SMART_DISPS[0]
     const area = d.minArea + Math.floor(rand() * (d.maxArea - d.minArea + 1))
     const rawPrice = (d.priceBase + rand() * d.priceRange) * mult
     const cena = Math.round(rawPrice / 50_000) * 50_000
 
-    const hood   = hoods[Math.floor(rand() * hoods.length)]
+    const hIdx = Math.floor(rand() * hoods.length) % Math.max(1, hoods.length)
+    const hood = hoods[hIdx] ?? hoods[0] ?? cfg.label
     const nazev  = `Prodej bytu ${d.disp} ${area} m², ${hood}`
 
     const dayOffset = Math.floor(rand() * 3)                // 0–2 days ago
@@ -922,11 +925,15 @@ export async function GET(req: Request) {
     }
   }
 
-  processResult("sreality", srealityRes, generateSmartFallback("sreality", cfg.key, cfg))
-  processResult("bezrealitky", bezrealitkyRes, generateSmartFallback("bezrealitky", cfg.key, cfg))
-  processResult("idnes", idnesRes, generateSmartFallback("idnes", cfg.key, cfg))
-  processResult("realitymix", realitymixRes, generateSmartFallback("realitymix", cfg.key, cfg))
-  processResult("bazos", bazosRes, generateSmartFallback("bazos", cfg.key, cfg))
+  const safeSmartFallback = (srv: MonitoringResult["server"]) => {
+    try { return generateSmartFallback(srv, cfg.key, cfg) } catch { return [] }
+  }
+
+  processResult("sreality", srealityRes, safeSmartFallback("sreality"))
+  processResult("bezrealitky", bezrealitkyRes, safeSmartFallback("bezrealitky"))
+  processResult("idnes", idnesRes, safeSmartFallback("idnes"))
+  processResult("realitymix", realitymixRes, safeSmartFallback("realitymix"))
+  processResult("bazos", bazosRes, safeSmartFallback("bazos"))
 
   // Filter out "on request" / nonsense prices from live results
   for (let i = allResults.length - 1; i >= 0; i--) {

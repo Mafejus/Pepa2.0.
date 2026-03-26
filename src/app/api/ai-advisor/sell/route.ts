@@ -54,11 +54,30 @@ Pro každou nemovitost doporuč:
 Odpověz v JSON: [{ "propertyId": string, "nazev": string, "aktualniCena": number, "odhadTrzniCena": number, "doporuceni": "prodat"|"drzet"|"snizit_cenu", "duvod": "vysvětlení 2-3 věty", "urgence": "vysoká"|"střední"|"nízká" }]
 
 ODPOVĚZ POUZE JSON ARRAYEM.`,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 4096,
       })
 
       const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-      recommendations = JSON.parse(cleaned) as SellRecommendation[]
+      try {
+        recommendations = JSON.parse(cleaned) as SellRecommendation[]
+      } catch {
+        const jsonStart = cleaned.indexOf("[")
+        const jsonEnd   = cleaned.lastIndexOf("]")
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try {
+            recommendations = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as SellRecommendation[]
+          } catch (parseErr: unknown) {
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+            console.error("[ai-advisor/sell] JSON parse failed:", msg)
+            console.error("[ai-advisor/sell] Raw text (first 500):", text.substring(0, 500))
+            throw new Error("JSON parse failed: " + msg)
+          }
+        } else {
+          console.error("[ai-advisor/sell] No JSON array found in response")
+          console.error("[ai-advisor/sell] Raw text (first 500):", text.substring(0, 500))
+          throw new Error("No JSON array in Claude response")
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error("[ai-advisor/sell] Claude API error:", msg)

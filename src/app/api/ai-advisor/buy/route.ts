@@ -76,19 +76,35 @@ ${JSON.stringify(results.slice(0, 12).map((r) => ({
 
 Odpověz POUZE tímto JSON (max 3 položky, krátké texty):
 [{"id":"...","nazev":"...","cena":0,"lokalita":"...","url":"...","plocha":0,"dispozice":"...","duvod":"1-2 věty","investicniPotencial":"vysoky","doporuceniAkce":"1 věta"}]`,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 4096,
       })
 
       const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
+      // Try direct parse first, then bracket extraction, then give up
       try {
         parsed = JSON.parse(cleaned) as BuyRecommendation[]
       } catch {
-        const lastClose = cleaned.lastIndexOf("},")
-        const recovered = lastClose > 0 ? cleaned.slice(0, lastClose + 1) + "]" : "[]"
-        try {
-          parsed = JSON.parse(recovered) as BuyRecommendation[]
-        } catch {
-          parsed = []
+        const jsonStart = cleaned.indexOf("[")
+        const jsonEnd   = cleaned.lastIndexOf("]")
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try {
+            parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as BuyRecommendation[]
+          } catch (parseErr: unknown) {
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+            console.error("[ai-advisor/buy] JSON parse failed:", msg)
+            console.error("[ai-advisor/buy] Raw text (first 500):", text.substring(0, 500))
+            return NextResponse.json(
+              { recommendations: [], error: "AI analýza vrátila neplatná data. Zkuste to znovu." },
+              { status: 503 }
+            )
+          }
+        } else {
+          console.error("[ai-advisor/buy] No JSON array found in response")
+          console.error("[ai-advisor/buy] Raw text (first 500):", text.substring(0, 500))
+          return NextResponse.json(
+            { recommendations: [], error: "AI analýza vrátila neplatná data. Zkuste to znovu." },
+            { status: 503 }
+          )
         }
       }
     } catch (err: unknown) {

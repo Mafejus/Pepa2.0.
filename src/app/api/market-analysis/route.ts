@@ -119,11 +119,32 @@ Analyzuj tato REÁLNÁ data a vrať JSON:
 }
 
 ODPOVĚZ POUZE JSON OBJEKTEM.`,
-        maxOutputTokens: 1500,
+        maxOutputTokens: 4096,
       })
 
       const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-      analysis = { ...JSON.parse(cleaned), dataBasis: results.length } as MarketAnalysis
+      let rawParsed: Record<string, unknown>
+      try {
+        rawParsed = JSON.parse(cleaned) as Record<string, unknown>
+      } catch {
+        const jsonStart = cleaned.indexOf("{")
+        const jsonEnd   = cleaned.lastIndexOf("}")
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try {
+            rawParsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>
+          } catch (parseErr: unknown) {
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+            console.error("[market-analysis] JSON parse failed:", msg)
+            console.error("[market-analysis] Raw text (first 500):", text.substring(0, 500))
+            throw new Error("JSON parse failed: " + msg)
+          }
+        } else {
+          console.error("[market-analysis] No JSON object found in response")
+          console.error("[market-analysis] Raw text (first 500):", text.substring(0, 500))
+          throw new Error("No JSON object in Claude response")
+        }
+      }
+      analysis = { ...rawParsed, dataBasis: results.length } as MarketAnalysis
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error("[market-analysis] Claude API error:", msg)

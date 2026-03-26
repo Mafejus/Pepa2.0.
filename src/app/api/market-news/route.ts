@@ -48,11 +48,30 @@ Vrať JSON array:
 }]
 
 ODPOVĚZ POUZE JSON ARRAYEM.`,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 4096,
       })
 
       const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-      news = JSON.parse(cleaned) as NewsItem[]
+      try {
+        news = JSON.parse(cleaned) as NewsItem[]
+      } catch {
+        const jsonStart = cleaned.indexOf("[")
+        const jsonEnd   = cleaned.lastIndexOf("]")
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          try {
+            news = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as NewsItem[]
+          } catch (parseErr: unknown) {
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr)
+            console.error("[market-news] JSON parse failed:", msg)
+            console.error("[market-news] Raw text (first 500):", text.substring(0, 500))
+            throw new Error("JSON parse failed: " + msg)
+          }
+        } else {
+          console.error("[market-news] No JSON array found in response")
+          console.error("[market-news] Raw text (first 500):", text.substring(0, 500))
+          throw new Error("No JSON array in Claude response")
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error("[market-news] Claude API error:", msg)

@@ -111,12 +111,23 @@ ODPOVĚZ POUZE JSON ARRAYEM, žádný další text.`
         system:
           "Jsi expert na český realitní trh. Analyzuj nabídky nemovitostí a ohodnoť jejich zajímavost pro realitní kancelář. Odpovídej POUZE validním JSON arrayem.",
         prompt,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 4096,
       })
 
       // Strip markdown code fences if present
       const cleaned = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim()
-      const parsed = JSON.parse(cleaned) as AiScore[]
+      let parsed: AiScore[]
+      try {
+        parsed = JSON.parse(cleaned) as AiScore[]
+      } catch {
+        const jsonStart = cleaned.indexOf("[")
+        const jsonEnd   = cleaned.lastIndexOf("]")
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as AiScore[]
+        } else {
+          throw new Error("No JSON array in response")
+        }
+      }
 
       // Validate and fill missing
       scores = liveResults.map((r) => {
