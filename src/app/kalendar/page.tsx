@@ -491,6 +491,9 @@ export default function KalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; email: string | null }>({ connected: false, email: null })
 
   const week = useMemo(() => {
@@ -532,6 +535,41 @@ export default function KalendarPage() {
 
   const totalEvents = eventsByDay.flat().length
 
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm("Opravdu odpojit Google účet? Synchronizace s Google Kalendářem přestane fungovat.")) return
+    setDisconnecting(true)
+    try {
+      await fetch("/api/auth/google/disconnect", { method: "POST" })
+      setGoogleStatus({ connected: false, email: null })
+      showToast("Google účet odpojen")
+    } catch {
+      alert("Nepodařilo se odpojit Google účet")
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  const handleSeed = async () => {
+    setSeeding(true)
+    try {
+      const res = await fetch("/api/calendar/seed", { method: "POST" })
+      const data = await res.json()
+      if (data.success) {
+        await fetchEvents(week, true)
+        showToast(`Demo kalendář naplněn (${data.count} událostí)`)
+      }
+    } catch {
+      alert("Nepodařilo se naplnit demo daty")
+    } finally {
+      setSeeding(false)
+    }
+  }
+
   const openCreate = () => { setEditingEvent(null); setShowForm(true) }
   const openEdit = (e: CalendarEvent) => { setEditingEvent(e); setShowForm(true) }
   const handleSaved = () => fetchEvents(week, true)
@@ -540,6 +578,13 @@ export default function KalendarPage() {
 
   return (
     <div className="flex flex-col gap-4 pb-6">
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 rounded-lg bg-slate-800 px-4 py-2.5 text-[13px] font-medium text-white shadow-lg">
+          {toast}
+        </div>
+      )}
+
       {/* Google Calendar Banner */}
       {!googleStatus.connected ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
@@ -550,12 +595,22 @@ export default function KalendarPage() {
               <div className="text-[11px] text-slate-500">Synchronizujte události s vaším Google účtem</div>
             </div>
           </div>
-          <a
-            href="/api/auth/google"
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-blue-700 transition-colors"
-          >
-            Propojit
-          </a>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSeed}
+              disabled={seeding}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+            >
+              {seeding ? <RefreshCw className="h-3 w-3 animate-spin" /> : "📅"}
+              Naplnit demo daty
+            </button>
+            <a
+              href="/api/auth/google"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-blue-700 transition-colors"
+            >
+              Propojit Google
+            </a>
+          </div>
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -564,14 +619,32 @@ export default function KalendarPage() {
             <span className="text-[13px] font-semibold text-slate-800">Google Kalendář propojen ✓</span>
             {googleStatus.email && <span className="text-[11px] text-slate-500">{googleStatus.email}</span>}
           </div>
-          <button
-            onClick={() => fetchEvents(week, true)}
-            disabled={syncing}
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3 w-3", syncing && "animate-spin")} />
-            Synchronizovat
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSeed}
+              disabled={seeding}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+            >
+              {seeding ? <RefreshCw className="h-3 w-3 animate-spin" /> : "📅"}
+              Naplnit demo daty
+            </button>
+            <button
+              onClick={() => fetchEvents(week, true)}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3 w-3", syncing && "animate-spin")} />
+              Synchronizovat
+            </button>
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {disconnecting ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+              Odpojit
+            </button>
+          </div>
         </div>
       )}
 

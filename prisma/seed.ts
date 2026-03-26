@@ -212,7 +212,11 @@ async function main() {
   })
   console.log(`  ✓ 3 users + 4 tasks seeded`)
 
-  console.log("\n✅ Seed complete! (Calendar events skipped — synced from Google Calendar)")
+  // ── Clear Google tokens ────────────────────────────────────────────────────
+  await prisma.googleToken.deleteMany()
+  console.log("  ✓ Google tokens cleared")
+
+  console.log("\n✅ Seed complete!")
 }
 
 main()
