@@ -4,6 +4,8 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { monitoringResults } from "@/lib/data/monitoring"
 import { auth } from "@/lib/auth"
+import { getBaseUrl } from "@/lib/base-url"
+import { fetchMonitoringResults } from "@/lib/monitoring-core"
 
 export const maxDuration = 60
 
@@ -354,11 +356,7 @@ export async function POST(req: Request) {
             .describe("Konkrétní den jako ISO datum"),
         }),
         execute: async ({ tyden, hledejVolne, den }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL
-              ? `https://${process.env.VERCEL_URL}`
-              : "http://localhost:3000")
+          const baseUrl = getBaseUrl()
 
           const params = new URLSearchParams()
           if (tyden) params.set("tyden", tyden)
@@ -413,11 +411,7 @@ export async function POST(req: Request) {
           const zacatek = `${datum}T${casOd}:00Z`
           const konec = `${datum}T${casDo}:00Z`
 
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL
-              ? `https://${process.env.VERCEL_URL}`
-              : "http://localhost:3000")
+          const baseUrl = getBaseUrl()
 
           try {
             const res = await fetch(`${baseUrl}/api/calendar`, {
@@ -480,11 +474,7 @@ export async function POST(req: Request) {
           let realTerminy = navrhovaneTerminy ?? []
           if (typ === "prohlidka" && realTerminy.length === 0) {
             try {
-              const baseUrl =
-                process.env.NEXT_PUBLIC_BASE_URL ??
-                (process.env.VERCEL_URL
-                  ? `https://${process.env.VERCEL_URL}`
-                  : "http://localhost:3000")
+              const baseUrl = getBaseUrl()
               const [resCurrent, resNext] = await Promise.all([
                 fetch(`${baseUrl}/api/calendar?volne=true`, { cache: "no-store" }),
                 fetch(`${baseUrl}/api/calendar?tyden=next&volne=true`, { cache: "no-store" }),
@@ -1056,9 +1046,7 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           unreadOnly: z.boolean().optional().describe("Jen nepřečtené emaily"),
         }),
         execute: async ({ query, limit, unreadOnly }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+          const baseUrl = getBaseUrl()
 
           try {
             const params = new URLSearchParams()
@@ -1100,9 +1088,7 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           telo: z.string().describe("Tělo emailu — hotový text k odeslání"),
         }),
         execute: async ({ komu, predmet, telo }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+          const baseUrl = getBaseUrl()
 
           try {
             const res = await fetch(`${baseUrl}/api/gmail/send`, {
@@ -1133,18 +1119,10 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           tagy: z.array(z.string()).optional().describe("Štítky, např. ['klient', 'nemovitost']"),
         }),
         execute: async ({ titulek, obsah, priorita, tagy }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-
           try {
-            const res = await fetch(`${baseUrl}/api/notes`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ titulek, obsah: obsah ?? "", priorita: priorita ?? "medium", tagy: tagy ?? [] }),
-              cache: "no-store",
+            const note = await prisma.note.create({
+              data: { titulek, obsah: obsah ?? "", priorita: priorita ?? "medium", tagy: tagy ?? [] },
             })
-            const note = await res.json()
             return { success: true, note, message: `Poznámka "${titulek}" vytvořena` }
           } catch (err) {
             return { success: false, error: String(err) }
@@ -1160,24 +1138,17 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           priorita: z.enum(["low", "medium", "high"]).optional().describe("Filtr podle priority"),
         }),
         execute: async ({ stav, priorita }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-
           try {
-            const params = new URLSearchParams()
-            if (stav) params.set("stav", stav)
-            if (priorita) params.set("priorita", priorita)
-
-            const res = await fetch(`${baseUrl}/api/notes?${params}`, { cache: "no-store" })
-            const notes = await res.json()
-            const arr = Array.isArray(notes) ? notes : []
+            const where: Record<string, unknown> = {}
+            if (stav) where.stav = stav
+            if (priorita) where.priorita = priorita
+            const arr = await prisma.note.findMany({ where, orderBy: { createdAt: "desc" } })
             return {
               notes: arr,
               total: arr.length,
-              todoCount: arr.filter((n: { stav: string }) => n.stav === "todo").length,
-              inProgressCount: arr.filter((n: { stav: string }) => n.stav === "in_progress").length,
-              doneCount: arr.filter((n: { stav: string }) => n.stav === "done").length,
+              todoCount: arr.filter((n) => n.stav === "todo").length,
+              inProgressCount: arr.filter((n) => n.stav === "in_progress").length,
+              doneCount: arr.filter((n) => n.stav === "done").length,
             }
           } catch (err) {
             return { error: String(err), notes: [] }
@@ -1192,10 +1163,6 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           fileId: z.string().describe("ID nahraného souboru z /api/upload"),
         }),
         execute: async ({ fileId }) => {
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL ??
-            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-
           try {
             const { prisma: db } = await import("@/lib/db")
             const file = await db.uploadedFile.findUnique({ where: { id: fileId } })
@@ -1425,12 +1392,16 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
         }),
         execute: async ({ dotaz, category }) => {
           try {
-            const params = new URLSearchParams({ search: dotaz })
-            if (category) params.set("category", category)
-            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-            const res = await fetch(`${baseUrl}/api/documents?${params}`, { signal: AbortSignal.timeout(10_000) })
-            const data = await res.json()
-            return { documents: data.documents ?? [], celkem: (data.documents ?? []).length }
+            const where: Record<string, unknown> = {
+              OR: [
+                { filename: { contains: dotaz, mode: "insensitive" } },
+                { content: { contains: dotaz, mode: "insensitive" } },
+                { summary: { contains: dotaz, mode: "insensitive" } },
+              ],
+            }
+            if (category) where.category = category
+            const documents = await prisma.document.findMany({ where, orderBy: { createdAt: "desc" }, take: 10 })
+            return { documents, celkem: documents.length }
           } catch (err) {
             return { documents: [], celkem: 0, error: String(err) }
           }
@@ -1445,15 +1416,13 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
         }),
         execute: async ({ documentId }) => {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-            const res = await fetch(`${baseUrl}/api/documents/${documentId}`, { signal: AbortSignal.timeout(10_000) })
-            if (!res.ok) return { error: "Dokument nenalezen" }
-            const doc = await res.json()
+            const doc = await prisma.document.findUnique({ where: { id: documentId } })
+            if (!doc) return { error: "Dokument nenalezen" }
             return {
               filename: doc.filename,
               category: doc.category,
               summary: doc.summary,
-              content: (doc.content as string)?.slice(0, 4000),
+              content: doc.content?.slice(0, 4000),
               createdAt: doc.createdAt,
             }
           } catch (err) {
@@ -1533,7 +1502,7 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
         }),
         execute: async ({ typ, lokalita }) => {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+            const baseUrl = getBaseUrl()
             // Map free-form locality to known monitoring slugs
             const lokMapping: Record<string, string> = {
               "holešovice": "praha-7-holesovice",
@@ -1569,7 +1538,7 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
         }),
         execute: async ({ lokalita }) => {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+            const baseUrl = getBaseUrl()
             const res = await fetch(`${baseUrl}/api/market-analysis?lokalita=${encodeURIComponent(lokalita ?? "Praha")}`, { signal: AbortSignal.timeout(55_000) })
             return await res.json()
           } catch (err) {
@@ -1586,7 +1555,7 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
         }),
         execute: async ({ lokalita, tema }) => {
           try {
-            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+            const baseUrl = getBaseUrl()
             const params = new URLSearchParams({ lokalita: lokalita ?? "Česko" })
             if (tema) params.set("tema", tema)
             const res = await fetch(`${baseUrl}/api/market-news?${params}`, { signal: AbortSignal.timeout(55_000) })
@@ -1636,21 +1605,10 @@ Odpověz POUZE JSON arrayem (přesně 3 položky):
           let serverStatus: Record<string, { live: boolean; count: number }> = {}
 
           try {
-            const baseUrl =
-              process.env.NEXT_PUBLIC_BASE_URL ??
-              (process.env.VERCEL_URL
-                ? `https://${process.env.VERCEL_URL}`
-                : "http://localhost:3000")
-            const res = await fetch(
-              `${baseUrl}/api/monitoring-live?lokalita=${loc}`,
-              { signal: AbortSignal.timeout(20_000), cache: "no-store" },
-            )
-            if (res.ok) {
-              const data = await res.json()
-              if (data.results?.length > 0) {
-                allResults = data.results
-                serverStatus = data.serverStatus ?? {}
-              }
+            const liveResults = await fetchMonitoringResults(loc)
+            if (liveResults.length > 0) {
+              allResults = liveResults
+              serverStatus = { sreality: { live: true, count: liveResults.length } }
             }
           } catch {
             // Fallback to mock data

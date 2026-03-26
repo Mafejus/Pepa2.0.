@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { anthropic } from "@ai-sdk/anthropic"
 import type { MonitoringResult } from "@/lib/data/monitoring"
+import { fetchMonitoringResults } from "@/lib/monitoring-core"
 
 export const maxDuration = 60
 
@@ -35,21 +36,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Use the app's own monitoring-live API — it has proven Sreality fetching + fallback
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ??
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-
-    const res = await fetch(`${baseUrl}/api/monitoring-live?lokalita=${lokalita}&nocache=1`, {
-      signal: AbortSignal.timeout(25_000),
-      cache: "no-store",
-    })
-
-    if (!res.ok) throw new Error(`monitoring-live failed: HTTP ${res.status}`)
-    const data = await res.json()
-
-    const results: MonitoringResult[] = (data.results ?? []).filter(
-      (r: MonitoringResult) => !r.jeFallback && r.cena >= 100_000
-    )
+    const allResults = await fetchMonitoringResults(lokalita)
+    const results: MonitoringResult[] = allResults.filter((r) => r.cena >= 100_000)
 
     if (results.length === 0) {
       return NextResponse.json({ recommendations: [], error: "Žádné aktuální nabídky v databázi. Zkuste spustit monitoring nejprve." })
