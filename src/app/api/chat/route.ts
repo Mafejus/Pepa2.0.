@@ -6,6 +6,7 @@ import { monitoringResults } from "@/lib/data/monitoring"
 import { auth } from "@/lib/auth"
 import { getBaseUrl } from "@/lib/base-url"
 import { fetchMonitoringResults } from "@/lib/monitoring-core"
+import { getGoogleEvents } from "@/lib/google-calendar"
 
 export const maxDuration = 60
 
@@ -356,34 +357,125 @@ export async function POST(req: Request) {
             .describe("Konkrétní den jako ISO datum"),
         }),
         execute: async ({ tyden, hledejVolne, den }) => {
-          const baseUrl = getBaseUrl()
+          console.log("[getCalendar] called, tyden:", tyden, "hledejVolne:", hledejVolne, "den:", den)
 
-          const params = new URLSearchParams()
-          if (tyden) params.set("tyden", tyden)
-          if (hledejVolne) params.set("volne", "true")
+          const now = new Date()
+          let timeMin: string
+          let timeMax: string
+
           if (den) {
-            params.set("timeMin", new Date(den + "T00:00:00Z").toISOString())
-            params.set("timeMax", new Date(den + "T23:59:59Z").toISOString())
+            const d = new Date(den)
+            d.setHours(0, 0, 0, 0)
+            timeMin = d.toISOString()
+            const end = new Date(d)
+            end.setHours(23, 59, 59, 999)
+            timeMax = end.toISOString()
+          } else if (tyden === "next") {
+            const start = new Date(now)
+            start.setDate(start.getDate() + (7 - start.getDay() + 1))
+            start.setHours(0, 0, 0, 0)
+            timeMin = start.toISOString()
+            const end = new Date(start)
+            end.setDate(end.getDate() + 6)
+            end.setHours(23, 59, 59, 999)
+            timeMax = end.toISOString()
+          } else {
+            // Current week — Monday to Sunday
+            const start = new Date(now)
+            start.setDate(start.getDate() - start.getDay() + 1)
+            start.setHours(0, 0, 0, 0)
+            timeMin = start.toISOString()
+            const end = new Date(start)
+            end.setDate(end.getDate() + 6)
+            end.setHours(23, 59, 59, 999)
+            timeMax = end.toISOString()
           }
 
+          type CalEvent = {
+            id: string; nazev: string; typ: string; zacatek: string; konec: string;
+            lokace: string | null; ucastnici: string[]; poznamka: string | null;
+            zdroj: string; googleEventId?: string | null;
+          }
+          const events: CalEvent[] = []
+          const seenGoogleIds = new Set<string>()
+
+          // 1. Google Calendar (direct API call — no self-fetch)
           try {
-            const res = await fetch(`${baseUrl}/api/calendar?${params}`, {
-              cache: "no-store",
+            const googleEvents = await getGoogleEvents(timeMin, timeMax)
+            for (const e of googleEvents) {
+              if (e.googleEventId) seenGoogleIds.add(e.googleEventId)
+              events.push({ ...e, zdroj: "google" })
+            }
+            console.log(`[getCalendar] Google Calendar returned ${googleEvents.length} events`)
+          } catch (err) {
+            console.error("[getCalendar] Google Calendar error:", err instanceof Error ? err.message : String(err))
+          }
+
+          // 2. DB events (skip those already synced from Google)
+          try {
+            const dbEvents = await prisma.calendarEvent.findMany({
+              where: { zacatek: { gte: new Date(timeMin), lte: new Date(timeMax) } },
+              orderBy: { zacatek: "asc" },
             })
-            if (!res.ok) throw new Error("Calendar fetch failed")
-            const data = await res.json()
-
-            if (hledejVolne && data.freeSlots) {
-              return { freeSlots: data.freeSlots }
+            for (const dbEvt of dbEvents) {
+              if (dbEvt.googleEventId && seenGoogleIds.has(dbEvt.googleEventId)) continue
+              events.push({
+                id: dbEvt.id,
+                nazev: dbEvt.nazev,
+                typ: dbEvt.typ,
+                zacatek: dbEvt.zacatek.toISOString(),
+                konec: dbEvt.konec.toISOString(),
+                lokace: dbEvt.lokace ?? null,
+                ucastnici: dbEvt.ucastnici,
+                poznamka: dbEvt.poznamka ?? null,
+                zdroj: "pepa",
+                googleEventId: dbEvt.googleEventId ?? null,
+              })
             }
+            console.log(`[getCalendar] DB returned ${dbEvents.length} events`)
+          } catch (err) {
+            console.error("[getCalendar] DB error:", err instanceof Error ? err.message : String(err))
+          }
 
-            const events = Array.isArray(data) ? data : []
-            return {
-              events,
-              volneSloty: undefined,
+          // 3. Sort by start time
+          events.sort((a, b) => new Date(a.zacatek).getTime() - new Date(b.zacatek).getTime())
+
+          // 4. Free slots (9:00–17:00, next 7 weekdays)
+          let freeSlots: Array<{ den: string; zacatek: string; konec: string; denLabel: string }> = []
+          if (hledejVolne) {
+            for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+              const day = new Date(now)
+              day.setDate(day.getDate() + dayOffset)
+              if (day.getDay() === 0 || day.getDay() === 6) continue
+              const dayStr = day.toISOString().slice(0, 10)
+              const dayEvents = events.filter((e) => e.zacatek.startsWith(dayStr))
+
+              for (let hour = 9; hour < 17; hour++) {
+                const slotStart = new Date(day)
+                slotStart.setHours(hour, 0, 0, 0)
+                const slotEnd = new Date(day)
+                slotEnd.setHours(hour + 1, 0, 0, 0)
+                const isOccupied = dayEvents.some((e) => {
+                  const eStart = new Date(e.zacatek).getTime()
+                  const eEnd = new Date(e.konec).getTime()
+                  return eStart < slotEnd.getTime() && eEnd > slotStart.getTime()
+                })
+                if (!isOccupied) {
+                  freeSlots.push({
+                    den: dayStr,
+                    zacatek: slotStart.toISOString(),
+                    konec: slotEnd.toISOString(),
+                    denLabel: day.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" }),
+                  })
+                }
+              }
             }
-          } catch {
-            return { events: [], volneSloty: undefined }
+          }
+
+          return {
+            events,
+            celkem: events.length,
+            freeSlots: hledejVolne ? freeSlots : undefined,
           }
         },
       },
@@ -470,33 +562,44 @@ export async function POST(req: Request) {
           kontext,
           navrhovaneTerminy,
         }) => {
-          // For viewing appointments, auto-fetch real free slots from calendar if none provided
+          // For viewing appointments, auto-fetch real free slots from Google Calendar if none provided
           let realTerminy = navrhovaneTerminy ?? []
           if (typ === "prohlidka" && realTerminy.length === 0) {
             try {
-              const baseUrl = getBaseUrl()
-              const [resCurrent, resNext] = await Promise.all([
-                fetch(`${baseUrl}/api/calendar?volne=true`, { cache: "no-store" }),
-                fetch(`${baseUrl}/api/calendar?tyden=next&volne=true`, { cache: "no-store" }),
-              ])
-              const dataCurrent = resCurrent.ok ? await resCurrent.json() : {}
-              const dataNext = resNext.ok ? await resNext.json() : {}
-              const slots = [
-                ...((dataCurrent.freeSlots ?? []) as { den: string; zacatek: string }[]),
-                ...((dataNext.freeSlots ?? []) as { den: string; zacatek: string }[]),
-              ]
-              // Format slots as human-readable Czech date+time strings, take first 4
-              realTerminy = slots.slice(0, 4).map(({ den, zacatek }) => {
-                const d = new Date(zacatek)
-                const dateStr = d.toLocaleDateString("cs-CZ", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
+              const now = new Date()
+              // Fetch 2 weeks of events to find free slots
+              const twoWeeksLater = new Date(now)
+              twoWeeksLater.setDate(twoWeeksLater.getDate() + 14)
+              const existingEvents = await getGoogleEvents(now.toISOString(), twoWeeksLater.toISOString())
+
+              const slots: { zacatek: Date }[] = []
+              for (let dayOffset = 0; dayOffset < 14 && slots.length < 4; dayOffset++) {
+                const day = new Date(now)
+                day.setDate(day.getDate() + dayOffset)
+                if (day.getDay() === 0 || day.getDay() === 6) continue
+                const dayStr = day.toISOString().slice(0, 10)
+                const dayEvents = existingEvents.filter((e) => e.zacatek.startsWith(dayStr))
+
+                for (let hour = 9; hour < 17 && slots.length < 4; hour++) {
+                  const slotStart = new Date(day)
+                  slotStart.setHours(hour, 0, 0, 0)
+                  const slotEnd = new Date(day)
+                  slotEnd.setHours(hour + 1, 0, 0, 0)
+                  const isOccupied = dayEvents.some((e) => {
+                    const eStart = new Date(e.zacatek).getTime()
+                    const eEnd = new Date(e.konec).getTime()
+                    return eStart < slotEnd.getTime() && eEnd > slotStart.getTime()
+                  })
+                  if (!isOccupied) slots.push({ zacatek: slotStart })
+                }
+              }
+
+              realTerminy = slots.map(({ zacatek }) => {
+                const dateStr = zacatek.toLocaleDateString("cs-CZ", {
+                  weekday: "long", day: "numeric", month: "long",
                 })
-                const timeStr = d.toLocaleTimeString("cs-CZ", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  timeZone: "Europe/Prague",
+                const timeStr = zacatek.toLocaleTimeString("cs-CZ", {
+                  hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague",
                 })
                 return `${dateStr} v ${timeStr}`
               })
